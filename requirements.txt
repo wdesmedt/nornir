@@ -2,6 +2,7 @@ colorama
 pyyaml
 jinja2
 napalm>=2.3.0
+napalm-yang>=0.1.0
 netmiko>=2.1.1
 paramiko
 future
