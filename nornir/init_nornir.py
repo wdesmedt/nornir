@@ -7,12 +7,14 @@ from nornir.core.state import GlobalState
 from nornir.plugins.connections.napalm import Napalm
 from nornir.plugins.connections.netmiko import Netmiko
 from nornir.plugins.connections.paramiko import Paramiko
+from nornir.plugins.connections.ncclient import Ncclient
 
 
 def register_default_connection_plugins() -> None:
     Connections.register("napalm", Napalm)
     Connections.register("netmiko", Netmiko)
     Connections.register("paramiko", Paramiko)
+    Connections.register("ncclient", Ncclient)
 
 
 def cls_to_string(cls: Callable[..., Any]) -> str:
