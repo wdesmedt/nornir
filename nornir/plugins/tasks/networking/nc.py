@@ -46,7 +46,7 @@ def get_config(
 def get(
     task: Task,
     path: List[str],
-    depth: int = None,
+    depth: int = 99,
     exclude: List[str] = None
 ) -> Result:
     """

@@ -74,21 +74,20 @@ class Ncclient(ConnectionPlugin):
         reply = self._connection.get_config(source, filter = nc_filter)
         if strip:
             d = OrderedDict()
-            try:
-                d = xmltodict.parse(reply.xml)['rpc-reply']['data'].get('configure', {})
-            except AttributeError:
-                pass
-            try:
-                del d['@xmlns']
-            except KeyError:
-                pass
+            d = xmltodict.parse(reply.xml)['rpc-reply']['data']
+            if not d:
+                return {}
+            d = d.get('configure', {})
+            del d['@xmlns']
             for node in path:
                 if '=' in node:
                     break
-                try:
-                    d = d[node]
-                except KeyError:
-                    raise("Node in supplied path not in result")
+                d = d.get(node)
+                if not d:
+                    return {}
+#                    raise KeyError(
+#                        f"Node '{node}' in path '{path}' not in response. Is it configured on router?"
+#                        )
             if len(path) > 0:
                 d = OrderedDict([(path[-1], d)])    # this is needed to get rid of potential attribs in root of elem
                                                     # that would still be there if just doing d = d[node[-1]]
@@ -117,36 +116,24 @@ class Ncclient(ConnectionPlugin):
             filter_str = self._expand_filter(path)
         else:
             filter_str = ""
-        nc_filter = f'<filter><state xmlns="urn:nokia.com:sros:ns:yang:sr:state">{filter_str}</state></filter>'
+        nc_filter = f'''<filter><state xmlns="urn:nokia.com:sros:ns:yang:sr:state">
+        {filter_str}
+        </state></filter>'''
         reply = self._connection.get(filter = nc_filter)
         if strip:
             d = OrderedDict()
-            try:
-                d = xmltodict.parse(reply.xml)['rpc-reply']['data'].get('state', {})
-            except AttributeError:
-                pass
-            try:
-                del d['@xmlns']
-            except KeyError:
-                pass
+#            d = xmltodict.parse(reply.xml)['rpc-reply']['data'].get('state', {})
+            d = xmltodict.parse(reply.xml)['rpc-reply']['data']
+            if not d:
+                return {}
+            d = d.get('state', {})
+            del d['@xmlns']
             for node in path:
-                if isinstance(d, list):
-                    if '=' not in node:
-                        raise ValueError(f"key=value node in path required for list of elements")
-                    found = False
-                    k, v = node.split('=')
-                    for elem in d:
-                        if elem[k] == v:
-                            d = elem
-                            found = True
-                            break
-                    if not found:
-                        raise ValueError(f"{k}={v} not found in list")
-                else:
-                    try:
-                        d = d[node]
-                    except KeyError:
-                        raise("Node in supplied path not in result")
+                if '=' in node:
+                    break
+                d = d.get(node)
+                if not d:
+                    return {}
             if len(path) > 0:
                 d = OrderedDict([(path[-1], d)])
         
