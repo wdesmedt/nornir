@@ -58,45 +58,19 @@ class Ncclient(ConnectionPlugin):
         path: str = None,
         depth: int = None,
         exclude: List[str] = None, 
-        strip: bool = True
+        strip: bool = True,
+        path_sep: str = "/"
     
     ):
-        if path:
-            path = path.strip('/').split('/')
-        else:
-            path = []
-        
-        if len(path) > 0:
-            filter_str = self._expand_filter(path)
-        else:
-            filter_str = ""
-        nc_filter = f'<filter><configure xmlns="urn:nokia.com:sros:ns:yang:sr:conf">{filter_str}</configure></filter>'
-        reply = self._connection.get_config(source, filter = nc_filter)
-        if strip:
-            d = OrderedDict()
-            d = xmltodict.parse(reply.xml)['rpc-reply']['data']
-            if not d:
-                return {}
-            d = d.get('configure', {})
-            del d['@xmlns']
-            for node in path:
-                if '=' in node:
-                    break
-                d = d.get(node)
-                if not d:
-                    return {}
-#                    raise KeyError(
-#                        f"Node '{node}' in path '{path}' not in response. Is it configured on router?"
-#                        )
-            if len(path) > 0:
-                d = OrderedDict([(path[-1], d)])    # this is needed to get rid of potential attribs in root of elem
-                                                    # that would still be there if just doing d = d[node[-1]]
-
-        else:
-            d = xmltodict.parse(reply.xml)['rpc-reply']['data']
-        if depth or exclude:
-            d = reduce_dict(d, depth=depth, exclude=exclude)
-        return d
+        return self._get_data(
+            data_type="configuration",
+            source=source,
+            path=path,
+            depth=depth,
+            exclude=exclude,
+            strip=strip,
+            path_sep=path_sep
+        )
         
 
     def get(
@@ -104,44 +78,18 @@ class Ncclient(ConnectionPlugin):
         path: str = None,
         depth: int = None,
         exclude: List[str] = None,
-        strip: bool = True
-    
+        strip: bool = True,
+        path_sep: str = "/"
     ):
-        if path:
-            path = path.strip('/').split('/')
-        else:
-            path = []
+        return self._get_data(
+            data_type="state",
+            path=path,
+            depth=depth,
+            exclude=exclude,
+            strip=strip,
+            path_sep=path_sep
+        )
 
-        if len(path) > 0:
-            filter_str = self._expand_filter(path)
-        else:
-            filter_str = ""
-        nc_filter = f'''<filter><state xmlns="urn:nokia.com:sros:ns:yang:sr:state">
-        {filter_str}
-        </state></filter>'''
-        reply = self._connection.get(filter = nc_filter)
-        if strip:
-            d = OrderedDict()
-#            d = xmltodict.parse(reply.xml)['rpc-reply']['data'].get('state', {})
-            d = xmltodict.parse(reply.xml)['rpc-reply']['data']
-            if not d:
-                return {}
-            d = d.get('state', {})
-            del d['@xmlns']
-            for node in path:
-                if '=' in node:
-                    break
-                d = d.get(node)
-                if not d:
-                    return {}
-            if len(path) > 0:
-                d = OrderedDict([(path[-1], d)])
-        
-        else:
-            d = xmltodict.parse(reply.xml)['rpc-reply']['data']
-        if depth or exclude:
-            d = reduce_dict(d, depth=depth, exclude=exclude)
-        return d
 
     def edit_config(
         self,
@@ -197,6 +145,71 @@ class Ncclient(ConnectionPlugin):
         self._connection.discard_changes()
 
 
+    def _get_data(
+        self,
+        data_type: str = "configuration",
+        source: str = None,
+        path: str = None,
+        depth: int = None,
+        exclude: List[str] = None, 
+        strip: bool = True,
+        path_sep: str = "/"
+    
+    ):
+        if data_type not in ['configuration', 'state']:
+            raise ValueError(f"Invalid data_type param: {data_type}")
+        if path:
+            path = path.strip(path_sep).split(path_sep)
+        else:
+            path = []
+        
+        if len(path) > 0:
+            filter_str = self._expand_filter(path)
+        else:
+            filter_str = ""
+        if data_type == "configuration":
+            nc_filter = f'''<filter><configure xmlns="urn:nokia.com:sros:ns:yang:sr:conf">
+               {filter_str}
+                </configure></filter>'''
+            reply = self._connection.get_config(source, filter = nc_filter)
+        else: 
+            nc_filter = f'''<filter><state xmlns="urn:nokia.com:sros:ns:yang:sr:state">
+                {filter_str}
+                </state></filter>'''
+            reply = self._connection.get(filter = nc_filter)
+
+        if strip:
+            d = OrderedDict()
+            d = xmltodict.parse(reply.xml)['rpc-reply']['data']
+            if not d:
+                return {}
+            if data_type == "configuration":
+                d = d.get('configure', {})
+            else:
+                d = d.get('state', {})
+            del d['@xmlns']
+            for node in path:
+                if '=' in node:
+                    continue
+                if isinstance(d, list):
+                    break
+                d = d.get(node)
+                if not d:
+                    return {}
+        else:
+            d = xmltodict.parse(reply.xml)['rpc-reply']['data']
+
+        if isinstance(d, list):
+            d_temp = OrderedDict()
+            d_temp['_count'] = len(d) 
+            for n, elem in enumerate(d):
+                d_temp[n] = elem
+            d = d_temp
+        if depth or exclude:
+            d = reduce_dict(d, depth=depth, exclude=exclude)
+        return d
+
+
     @staticmethod
     def _expand_filter(filter: List[str]) -> str:
         f = filter.copy()
@@ -204,10 +217,8 @@ class Ncclient(ConnectionPlugin):
         while len(f):
             e = f.pop()
             if '=' in e:
-                if len(expanded_filter) > 0:
-                    raise ValueError(f"match expr can only be in last elem of path")
                 k, v = e.split('=')
-                expanded_filter = f"<{k}>{v}</{k}>"
+                expanded_filter += f"<{k}>{v}</{k}>"
             else:
                 expanded_filter = f"<{e}>{expanded_filter}</{e}>"
         return expanded_filter

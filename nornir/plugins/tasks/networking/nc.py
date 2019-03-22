@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 from enum import Enum
 import json
@@ -16,7 +17,8 @@ def get_config(
     source: NcDatastore,
     path: str,
     exclude: List[str] = None,
-    depth: int = 99
+    depth: int = 99,
+    **kwargs
 ) -> Result:
     """
     Get configuration from specified datastore `source` on router
@@ -40,7 +42,7 @@ def get_config(
           * result (``dict``): dictionary with the result of the getter
     """
     conn = task.host.get_connection("ncclient", task.nornir.config)
-    result = conn.get_config(getattr(source, 'name'), path=path, depth=depth, exclude=exclude)
+    result = conn.get_config(getattr(source, 'name'), path=path, depth=depth, exclude=exclude, **kwargs)
     return Result(host=task.host, result=result)
 
 def get(
@@ -127,7 +129,12 @@ def nc_configure(
             * diff (``str``): changes to device config
     """
     conn = task.host.get_connection("ncclient", task.nornir.config)
-    conn.edit_config(config=configuration,target="candidate", path=path)
+    config_data = deepcopy(configuration) 
+    meta_data = {}
+    meta_keys = [ k for k in config_data.keys() if k.startswith('_')]
+    for k in meta_keys:
+        meta_data[k] = config_data.pop(k)
+    conn.edit_config(config=config_data,target="candidate", path=path)
     diff = conn.compare_config()
 
     dry_run = task.is_dry_run(dry_run)
